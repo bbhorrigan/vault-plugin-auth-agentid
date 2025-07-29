@@ -2,7 +2,8 @@ package main
 
 import (
 	"github.com/hashicorp/vault/sdk/plugin"
-	"vault-plugin-auth-mcp/backend"
+	"github.com/bbhorrigan/vault-plugin-auth-agentid/backend"
+
 )
 
 func main() {
