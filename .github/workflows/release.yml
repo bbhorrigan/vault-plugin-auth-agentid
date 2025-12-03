@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Build all platforms
+        run: |
+          mkdir -p dist
+          
+          # Linux
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dist/vault-plugin-auth-agentid-linux-amd64 .
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o dist/vault-plugin-auth-agentid-linux-arm64 .
+          
+          # macOS
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o dist/vault-plugin-auth-agentid-darwin-amd64 .
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o dist/vault-plugin-auth-agentid-darwin-arm64 .
+          
+          # Windows
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o dist/vault-plugin-auth-agentid-windows-amd64.exe .
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+
