@@ -72,7 +72,7 @@ func TestPathLogin_NoTrustedIssuers(t *testing.T) {
 			"trusted_issuers": []string{},
 		},
 	}
-	b.HandleRequest(context.Background(), configReq)
+	_, _ = b.HandleRequest(context.Background(), configReq)
 
 	req := &logical.Request{
 		Operation: logical.UpdateOperation,

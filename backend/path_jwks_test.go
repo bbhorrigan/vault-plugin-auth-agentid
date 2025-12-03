@@ -198,7 +198,7 @@ func TestPathJWKS_Delete(t *testing.T) {
 			"jwks_url": "https://issuer.example.com/.well-known/jwks.json",
 		},
 	}
-	b.HandleRequest(context.Background(), req)
+	_, _ = b.HandleRequest(context.Background(), req)
 
 	// Delete it
 	req = &logical.Request{
@@ -245,7 +245,7 @@ func TestPathJWKS_List(t *testing.T) {
 				"jwks_url": "https://" + issuer + ".example.com/.well-known/jwks.json",
 			},
 		}
-		b.HandleRequest(context.Background(), req)
+		_, _ = b.HandleRequest(context.Background(), req)
 	}
 
 	// List them

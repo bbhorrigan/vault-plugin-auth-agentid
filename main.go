@@ -1,13 +1,18 @@
 package main
 
 import (
-	"github.com/hashicorp/vault/sdk/plugin"
-	"github.com/bbhorrigan/vault-plugin-auth-agentid/backend"
+	"log"
+	"os"
 
+	"github.com/bbhorrigan/vault-plugin-auth-agentid/backend"
+	"github.com/hashicorp/vault/sdk/plugin"
 )
 
 func main() {
-	plugin.Serve(&plugin.ServeOpts{
+	if err := plugin.Serve(&plugin.ServeOpts{
 		BackendFactoryFunc: backend.Factory,
-	})
+	}); err != nil {
+		log.Printf("plugin shutting down: %v", err)
+		os.Exit(1)
+	}
 }
