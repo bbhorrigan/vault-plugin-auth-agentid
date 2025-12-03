@@ -80,7 +80,7 @@ func (b *backend) handleLogin(ctx context.Context, req *logical.Request, d *fram
 	// Parse and validate the token
 	claims, err := b.validateToken(ctx, req.Storage, config, tokenStr)
 	if err != nil {
-		b.Logger().Warn("token validation failed", "error", err)
+		b.Backend.Logger().Warn("token validation failed", "error", err)
 		return logical.ErrorResponse("invalid token: %s", err), nil
 	}
 

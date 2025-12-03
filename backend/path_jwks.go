@@ -297,7 +297,7 @@ func (b *backend) getKeyFromJWKS(ctx context.Context, s logical.Storage, config 
 
 	if err := b.saveJWKSConfig(ctx, s, config); err != nil {
 		// Log but don't fail - we have the keys
-		b.Logger().Warn("failed to cache JWKS", "error", err)
+		b.Backend.Logger().Warn("failed to cache JWKS", "error", err)
 	}
 
 	// Find the key

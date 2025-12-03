@@ -59,7 +59,7 @@ Configuration:
 		),
 	}
 
-	if err := b.Setup(ctx, conf); err != nil {
+	if err := b.Backend.Setup(ctx, conf); err != nil {
 		return nil, err
 	}
 
