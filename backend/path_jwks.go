@@ -439,14 +439,22 @@ func (b *backend) CreateKeyFunc(ctx context.Context, s logical.Storage, config *
 			return nil, fmt.Errorf("missing kid in token header")
 		}
 
-		// Get the issuer from claims
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
-			return nil, fmt.Errorf("invalid claims type")
+		// Get the issuer from claims - handle different claim types
+		var issuer string
+		switch claims := token.Claims.(type) {
+		case *AgentClaims:
+			issuer = claims.Issuer
+		case jwt.MapClaims:
+			iss, ok := claims["iss"].(string)
+			if !ok {
+				return nil, fmt.Errorf("missing iss claim")
+			}
+			issuer = iss
+		default:
+			return nil, fmt.Errorf("unsupported claims type: %T", token.Claims)
 		}
 
-		issuer, ok := claims["iss"].(string)
-		if !ok {
+		if issuer == "" {
 			return nil, fmt.Errorf("missing iss claim")
 		}
 
