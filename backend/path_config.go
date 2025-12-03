@@ -80,10 +80,6 @@ func pathConfig(b *backend) *framework.Path {
 				Callback: b.pathConfigWrite,
 				Summary:  "Configure the auth plugin",
 			},
-			logical.CreateOperation: &framework.PathOperation{
-				Callback: b.pathConfigWrite,
-				Summary:  "Configure the auth plugin",
-			},
 			logical.DeleteOperation: &framework.PathOperation{
 				Callback: b.pathConfigDelete,
 				Summary:  "Delete the configuration",

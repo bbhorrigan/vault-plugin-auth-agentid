@@ -92,10 +92,6 @@ func pathJWKS(b *backend) *framework.Path {
 				Callback: b.pathJWKSWrite,
 				Summary:  "Configure JWKS for an issuer",
 			},
-			logical.CreateOperation: &framework.PathOperation{
-				Callback: b.pathJWKSWrite,
-				Summary:  "Configure JWKS for an issuer",
-			},
 			logical.DeleteOperation: &framework.PathOperation{
 				Callback: b.pathJWKSDelete,
 				Summary:  "Delete JWKS configuration for an issuer",
