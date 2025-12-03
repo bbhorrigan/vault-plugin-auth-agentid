@@ -44,10 +44,6 @@ func pathLogin(b *backend) *framework.Path {
 				Callback: b.handleLogin,
 				Summary:  "Authenticate using an agent identity token",
 			},
-			logical.CreateOperation: &framework.PathOperation{
-				Callback: b.handleLogin,
-				Summary:  "Authenticate using an agent identity token",
-			},
 			// Support AliasLookahead for entity alias resolution
 			logical.AliasLookaheadOperation: &framework.PathOperation{
 				Callback: b.handleLogin,
