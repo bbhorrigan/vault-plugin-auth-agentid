@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
@@ -14,7 +15,6 @@ import (
 	"math/big"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -56,14 +56,6 @@ type JSONWebKey struct {
 // JWKSSet represents a JWKS response
 type JWKSSet struct {
 	Keys []JSONWebKey `json:"keys"`
-}
-
-// KeyResolver provides thread-safe key resolution
-type KeyResolver struct {
-	backend *backend
-	storage logical.Storage
-	ctx     context.Context
-	mu      sync.RWMutex
 }
 
 func pathJWKS(b *backend) *framework.Path {
@@ -380,30 +372,25 @@ func jwkToECPublicKey(jwk JSONWebKey) (*ecdsa.PublicKey, error) {
 		return nil, fmt.Errorf("failed to decode y coordinate: %w", err)
 	}
 
-	var curve interface {
-		Params() *ecdsa.PublicKey
-	}
-
+	var curve elliptic.Curve
 	switch jwk.Crv {
 	case "P-256":
-		curve = nil // Will use elliptic.P256() but we'll handle differently
+		curve = elliptic.P256()
 	case "P-384":
-		curve = nil
+		curve = elliptic.P384()
 	case "P-521":
-		curve = nil
+		curve = elliptic.P521()
 	default:
 		return nil, fmt.Errorf("unsupported curve: %s", jwk.Crv)
 	}
-	_ = curve
 
 	x := new(big.Int).SetBytes(xBytes)
 	y := new(big.Int).SetBytes(yBytes)
 
-	// For now, return a simple representation
-	// In production, you'd use the proper elliptic curve
 	return &ecdsa.PublicKey{
-		X: x,
-		Y: y,
+		Curve: curve,
+		X:     x,
+		Y:     y,
 	}, nil
 }
 
