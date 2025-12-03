@@ -257,7 +257,7 @@ func TestPathLogin_ExpiredToken(t *testing.T) {
 			"allowed_algorithms": []string{"ES256"},
 		},
 	}
-	b.HandleRequest(context.Background(), configReq)
+	_, _ = b.HandleRequest(context.Background(), configReq)
 
 	jwksReq := &logical.Request{
 		Operation: logical.UpdateOperation,
@@ -268,7 +268,7 @@ func TestPathLogin_ExpiredToken(t *testing.T) {
 			"public_key": string(pubKeyPEM),
 		},
 	}
-	b.HandleRequest(context.Background(), jwksReq)
+	_, _ = b.HandleRequest(context.Background(), jwksReq)
 
 	// Create an expired JWT
 	claims := &AgentClaims{
@@ -336,7 +336,7 @@ func TestPathLogin_UntrustedIssuer(t *testing.T) {
 			"allowed_algorithms": []string{"ES256"},
 		},
 	}
-	b.HandleRequest(context.Background(), configReq)
+	_, _ = b.HandleRequest(context.Background(), configReq)
 
 	jwksReq := &logical.Request{
 		Operation: logical.UpdateOperation,
@@ -347,7 +347,7 @@ func TestPathLogin_UntrustedIssuer(t *testing.T) {
 			"public_key": string(pubKeyPEM),
 		},
 	}
-	b.HandleRequest(context.Background(), jwksReq)
+	_, _ = b.HandleRequest(context.Background(), jwksReq)
 
 	// Create a JWT from untrusted issuer
 	claims := &AgentClaims{
