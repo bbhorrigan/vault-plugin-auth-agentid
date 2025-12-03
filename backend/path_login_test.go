@@ -112,7 +112,7 @@ func TestPathLogin_Success(t *testing.T) {
 		Bytes: pubKeyBytes,
 	})
 
-	issuer := "https://test-issuer.example.com"
+	issuer := "test-issuer"
 
 	// Configure trusted issuer
 	configReq := &logical.Request{
@@ -129,10 +129,10 @@ func TestPathLogin_Success(t *testing.T) {
 		t.Fatalf("failed to configure: %v", err)
 	}
 
-	// Add JWKS with static key
+	// Add JWKS with static key - path must match the issuer name
 	jwksReq := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      "jwks/test-issuer",
+		Path:      "jwks/" + issuer,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"kid":        "test-key-1",
@@ -245,7 +245,7 @@ func TestPathLogin_ExpiredToken(t *testing.T) {
 		Bytes: pubKeyBytes,
 	})
 
-	issuer := "https://test-issuer.example.com"
+	issuer := "test-issuer"
 
 	// Configure
 	configReq := &logical.Request{
@@ -261,7 +261,7 @@ func TestPathLogin_ExpiredToken(t *testing.T) {
 
 	jwksReq := &logical.Request{
 		Operation: logical.UpdateOperation,
-		Path:      "jwks/test-issuer",
+		Path:      "jwks/" + issuer,
 		Storage:   storage,
 		Data: map[string]interface{}{
 			"kid":        "test-key-1",
