@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -146,6 +147,12 @@ func (b *backend) pathJWKSRead(ctx context.Context, req *logical.Request, d *fra
 func (b *backend) pathJWKSWrite(ctx context.Context, req *logical.Request, d *framework.FieldData) (*logical.Response, error) {
 	issuer := d.Get("issuer").(string)
 
+	// Get plugin config to check allow_insecure_jwks setting
+	config, err := b.getConfig(ctx, req.Storage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get config: %w", err)
+	}
+
 	jwksConfig, err := b.getJWKSConfig(ctx, req.Storage, issuer)
 	if err != nil {
 		return nil, err
@@ -158,7 +165,22 @@ func (b *backend) pathJWKSWrite(ctx context.Context, req *logical.Request, d *fr
 	}
 
 	if jwksURL, ok := d.GetOk("jwks_url"); ok {
-		jwksConfig.JWKSURL = jwksURL.(string)
+		url := jwksURL.(string)
+
+		// Validate HTTPS requirement unless explicitly allowed
+		allowInsecure := config != nil && config.AllowInsecureJWKS
+		if !strings.HasPrefix(url, "https://") {
+			if strings.HasPrefix(url, "http://") {
+				if !allowInsecure {
+					return logical.ErrorResponse("jwks_url must use HTTPS. Set allow_insecure_jwks=true in config for development only."), nil
+				}
+				b.Backend.Logger().Warn("using insecure HTTP for JWKS URL - not recommended for production", "url", url)
+			} else {
+				return logical.ErrorResponse("jwks_url must be a valid HTTP(S) URL"), nil
+			}
+		}
+
+		jwksConfig.JWKSURL = url
 		// Clear cached JWKS when URL changes
 		jwksConfig.CachedJWKS = nil
 	}
@@ -261,31 +283,51 @@ func (b *backend) GetVerificationKey(ctx context.Context, s logical.Storage, iss
 	return nil, fmt.Errorf("no key found for kid: %s", kid)
 }
 
-func (b *backend) getKeyFromJWKS(ctx context.Context, s logical.Storage, config *JWKSConfig, kid string) (interface{}, error) {
-	// Check cache (valid for 5 minutes)
-	if config.CachedJWKS != nil && time.Since(config.CachedJWKS.FetchedAt) < 5*time.Minute {
-		for _, key := range config.CachedJWKS.Keys {
+func (b *backend) getKeyFromJWKS(ctx context.Context, s logical.Storage, jwksConfig *JWKSConfig, kid string) (interface{}, error) {
+	// Get plugin config for cache TTL and timeout settings
+	pluginConfig, err := b.getConfig(ctx, s)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get config: %w", err)
+	}
+
+	// Use default values if config is not set
+	cacheTTL := 300 // 5 minutes default
+	requestTimeout := 10
+	if pluginConfig != nil {
+		if pluginConfig.JWKSCacheTTL > 0 {
+			cacheTTL = pluginConfig.JWKSCacheTTL
+		}
+		if pluginConfig.JWKSRequestTimeout > 0 {
+			requestTimeout = pluginConfig.JWKSRequestTimeout
+		}
+	}
+
+	// Check cache if enabled (cacheTTL > 0)
+	if cacheTTL > 0 && jwksConfig.CachedJWKS != nil && time.Since(jwksConfig.CachedJWKS.FetchedAt) < time.Duration(cacheTTL)*time.Second {
+		for _, key := range jwksConfig.CachedJWKS.Keys {
 			if key.Kid == kid {
 				return jwkToPublicKey(key)
 			}
 		}
 	}
 
-	// Fetch fresh JWKS
-	jwksSet, err := fetchJWKS(config.JWKSURL)
+	// Fetch fresh JWKS with context and configurable timeout
+	jwksSet, err := fetchJWKS(ctx, jwksConfig.JWKSURL, time.Duration(requestTimeout)*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
 	}
 
-	// Update cache
-	config.CachedJWKS = &CachedJWKS{
-		Keys:      jwksSet.Keys,
-		FetchedAt: time.Now(),
-	}
+	// Update cache if caching is enabled
+	if cacheTTL > 0 {
+		jwksConfig.CachedJWKS = &CachedJWKS{
+			Keys:      jwksSet.Keys,
+			FetchedAt: time.Now(),
+		}
 
-	if err := b.saveJWKSConfig(ctx, s, config); err != nil {
-		// Log but don't fail - we have the keys
-		b.Backend.Logger().Warn("failed to cache JWKS", "error", err)
+		if err := b.saveJWKSConfig(ctx, s, jwksConfig); err != nil {
+			// Log but don't fail - we have the keys
+			b.Backend.Logger().Warn("failed to cache JWKS", "error", err)
+		}
 	}
 
 	// Find the key
@@ -298,12 +340,30 @@ func (b *backend) getKeyFromJWKS(ctx context.Context, s logical.Storage, config 
 	return nil, fmt.Errorf("key with kid %s not found in JWKS", kid)
 }
 
-func fetchJWKS(url string) (*JWKSSet, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
+func fetchJWKS(ctx context.Context, url string, timeout time.Duration) (*JWKSSet, error) {
+	// Create HTTP client with TLS configuration
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
+	}
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   timeout,
+	}
 
-	resp, err := client.Get(url)
+	// Create request with context for cancellation support
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "vault-plugin-auth-agentid")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("JWKS request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -311,14 +371,16 @@ func fetchJWKS(url string) (*JWKSSet, error) {
 		return nil, fmt.Errorf("JWKS fetch returned status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	// Limit response body to 1MB to prevent memory exhaustion
+	limitedReader := io.LimitReader(resp.Body, 1<<20)
+	body, err := io.ReadAll(limitedReader)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	var jwksSet JWKSSet
 	if err := json.Unmarshal(body, &jwksSet); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse JWKS: %w", err)
 	}
 
 	return &jwksSet, nil

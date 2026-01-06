@@ -172,5 +172,99 @@ func TestDefaultConfig(t *testing.T) {
 	if len(config.AllowedAlgorithms) != 3 {
 		t.Errorf("expected 3 AllowedAlgorithms, got %d", len(config.AllowedAlgorithms))
 	}
+
+	if config.JWKSCacheTTL != 300 {
+		t.Errorf("expected JWKSCacheTTL=300, got %d", config.JWKSCacheTTL)
+	}
+
+	if config.ClockSkewLeeway != 60 {
+		t.Errorf("expected ClockSkewLeeway=60, got %d", config.ClockSkewLeeway)
+	}
+
+	if config.AllowInsecureJWKS != false {
+		t.Errorf("expected AllowInsecureJWKS=false, got %v", config.AllowInsecureJWKS)
+	}
+
+	if config.JWKSRequestTimeout != 10 {
+		t.Errorf("expected JWKSRequestTimeout=10, got %d", config.JWKSRequestTimeout)
+	}
+}
+
+func TestPathConfig_NewOptions(t *testing.T) {
+	b, storage := getTestBackend(t)
+
+	// Write config with new options
+	req := &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      "config",
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"trusted_issuers":      []string{"https://issuer.example.com"},
+			"jwks_cache_ttl":       600,
+			"clock_skew_leeway":    120,
+			"allow_insecure_jwks":  true,
+			"jwks_request_timeout": 30,
+		},
+	}
+
+	resp, err := b.HandleRequest(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp != nil && resp.IsError() {
+		t.Fatalf("unexpected error response: %v", resp.Error())
+	}
+
+	// Read it back
+	req = &logical.Request{
+		Operation: logical.ReadOperation,
+		Path:      "config",
+		Storage:   storage,
+	}
+
+	resp, err = b.HandleRequest(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("expected response, got nil")
+	}
+
+	// Verify new values
+	if resp.Data["jwks_cache_ttl"].(int) != 600 {
+		t.Errorf("expected jwks_cache_ttl=600, got %v", resp.Data["jwks_cache_ttl"])
+	}
+	if resp.Data["clock_skew_leeway"].(int) != 120 {
+		t.Errorf("expected clock_skew_leeway=120, got %v", resp.Data["clock_skew_leeway"])
+	}
+	if resp.Data["allow_insecure_jwks"].(bool) != true {
+		t.Errorf("expected allow_insecure_jwks=true, got %v", resp.Data["allow_insecure_jwks"])
+	}
+	if resp.Data["jwks_request_timeout"].(int) != 30 {
+		t.Errorf("expected jwks_request_timeout=30, got %v", resp.Data["jwks_request_timeout"])
+	}
+}
+
+func TestPathConfig_InvalidJWKSCacheTTL(t *testing.T) {
+	b, storage := getTestBackend(t)
+
+	req := &logical.Request{
+		Operation: logical.UpdateOperation,
+		Path:      "config",
+		Storage:   storage,
+		Data: map[string]interface{}{
+			"trusted_issuers": []string{"https://issuer.example.com"},
+			"jwks_cache_ttl":  -1,
+		},
+	}
+
+	resp, err := b.HandleRequest(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp == nil || !resp.IsError() {
+		t.Fatal("expected error response for negative jwks_cache_ttl")
+	}
 }
 

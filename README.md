@@ -6,10 +6,12 @@ A HashiCorp Vault auth plugin for verifying signed identity tokens from AI agent
 
 - **JWT/TraT/SIOP Verification**: Full JWT validation with support for RS256, ES256, and EdDSA signing algorithms
 - **JWKS Support**: Automatic key fetching and caching from JWKS endpoints
+- **Role-Based Access Control**: Define roles with bound claims, allowed intents, and custom policies
 - **Intent-Based Policies**: Map agent intents (read, write, code, etc.) to Vault policies
 - **DID Support**: Works with Decentralized Identifiers (e.g., `did:web:agent.example.com`)
 - **MCP Integration**: Metadata support for MCP server and tool tracking
 - **Short-Lived Credentials**: Configurable TTLs for secure, time-bound access
+- **Security Hardening**: HTTPS enforcement for JWKS, configurable clock skew tolerance, TLS 1.2+
 
 ## Installation
 
@@ -67,6 +69,10 @@ vault write auth/agentid/config \
 | `default_ttl` | Default token TTL in seconds | 300 (5 min) |
 | `max_ttl` | Maximum token TTL in seconds | 3600 (1 hr) |
 | `allowed_algorithms` | Allowed signing algorithms | RS256,ES256,EdDSA |
+| `jwks_cache_ttl` | JWKS cache TTL in seconds (0 to disable) | 300 (5 min) |
+| `clock_skew_leeway` | Clock skew tolerance for exp/nbf validation | 60 (1 min) |
+| `allow_insecure_jwks` | Allow HTTP JWKS URLs (dev only!) | false |
+| `jwks_request_timeout` | Timeout for JWKS HTTP requests | 10 (sec) |
 
 ### 2. Configure JWKS for Each Issuer
 
@@ -91,12 +97,55 @@ vault write auth/agentid/jwks/agent-provider \
 vault list auth/agentid/jwks/
 ```
 
+### 4. Configure Roles (Optional)
+
+Roles provide more granular control over authentication:
+
+```bash
+vault write auth/agentid/role/my-agent-role \
+    bound_issuers="https://agent-provider.example.com" \
+    bound_subjects="did:web:myagent.example.com" \
+    allowed_intents="read,write" \
+    token_policies="agent-read,agent-write" \
+    token_ttl=600 \
+    token_max_ttl=3600
+```
+
+**Role Options:**
+
+| Parameter | Description |
+|-----------|-------------|
+| `bound_subjects` | Allowed subject (sub) claim values |
+| `bound_issuers` | Allowed issuers for this role |
+| `bound_audiences` | Allowed audience claim values |
+| `bound_claims` | Map of claim names to required values (supports glob `*`) |
+| `bound_agent_ids` | Allowed agent_id claim values |
+| `allowed_intents` | Allowed intent values |
+| `token_policies` | Policies to attach to tokens |
+| `token_ttl` | Token TTL for this role |
+| `token_max_ttl` | Max token TTL for this role |
+| `token_num_uses` | Max uses for tokens from this role |
+
+### 5. List Roles
+
+```bash
+vault list auth/agentid/role/
+```
+
 ## Authentication
 
 ### Login with Agent Token
 
 ```bash
 vault write auth/agentid/login token="<signed-jwt>"
+```
+
+### Login with Role
+
+When using a role, additional claim validation is performed:
+
+```bash
+vault write auth/agentid/login token="<signed-jwt>" role="my-agent-role"
 ```
 
 ### Expected Token Claims
@@ -159,6 +208,8 @@ Scopes in the token (e.g., `["secrets:read"]`) are mapped to policies prefixed w
 | `auth/agentid/config` | GET, POST, DELETE | Manage plugin configuration |
 | `auth/agentid/jwks/:issuer` | GET, POST, DELETE | Manage JWKS for issuers |
 | `auth/agentid/jwks` | LIST | List configured issuers |
+| `auth/agentid/role/:name` | GET, POST, DELETE | Manage authentication roles |
+| `auth/agentid/role` | LIST | List configured roles |
 
 ## Example Policies
 
@@ -201,6 +252,40 @@ make lint
 
 # Set up dev environment
 make dev-setup
+
+# Show version
+make version
+```
+
+### Docker Development
+
+The easiest way to develop and test is with Docker:
+
+```bash
+# Build and start the development environment
+make docker-up
+
+# View logs
+make docker-logs
+
+# Stop the environment
+make docker-down
+```
+
+This starts Vault in dev mode with the plugin already registered. Connect with:
+
+```bash
+export VAULT_ADDR=http://localhost:8200
+export VAULT_TOKEN=root
+vault read auth/agentid/config
+```
+
+### Generating Test Tokens
+
+Use the helper script to generate test JWTs:
+
+```bash
+./scripts/generate-test-token.sh "https://issuer.example.com" "did:web:agent.example.com" "read"
 ```
 
 ## Architecture
@@ -246,6 +331,105 @@ make dev-setup
 4. **Limit trusted issuers** to only those you control or explicitly trust
 5. **Use required_audience** to prevent token reuse across services
 6. **Monitor auth logs** for failed authentication attempts
+7. **Use roles** for fine-grained access control with bound claims
+
+## Troubleshooting
+
+### Common Errors
+
+#### "auth method not configured"
+
+The plugin hasn't been configured yet. Configure trusted issuers:
+
+```bash
+vault write auth/agentid/config trusted_issuers="https://your-issuer.com"
+```
+
+#### "invalid token: untrusted issuer"
+
+The token's `iss` claim doesn't match any configured trusted issuer. Check:
+
+```bash
+vault read auth/agentid/config
+```
+
+Ensure the issuer in your token exactly matches one of the `trusted_issuers`.
+
+#### "invalid token: token has expired"
+
+The token's `exp` claim is in the past. Tokens must be fresh. If you're seeing this with valid tokens, check:
+
+1. Clock synchronization between your token issuer and Vault server
+2. Increase `clock_skew_leeway` if needed:
+   ```bash
+   vault write auth/agentid/config clock_skew_leeway=120
+   ```
+
+#### "invalid token: key with kid X not found in JWKS"
+
+The key ID in the token header doesn't match any key in the JWKS. Check:
+
+1. The `kid` in your token header matches a key in your JWKS
+2. If using a JWKS URL, the cache might be stale. The default cache TTL is 5 minutes.
+3. Verify JWKS is accessible: `curl -s <jwks_url>`
+
+#### "jwks_url must use HTTPS"
+
+For security, JWKS URLs must use HTTPS. For development only:
+
+```bash
+vault write auth/agentid/config allow_insecure_jwks=true
+```
+
+**Warning:** Never enable `allow_insecure_jwks` in production!
+
+#### "role validation failed: intent X not allowed by role"
+
+The token's intent doesn't match the role's `allowed_intents`. Check:
+
+```bash
+vault read auth/agentid/role/your-role
+```
+
+#### "algorithm X not allowed"
+
+The token was signed with an algorithm not in `allowed_algorithms`. Check your config:
+
+```bash
+vault read auth/agentid/config
+```
+
+### Debugging Tips
+
+1. **Enable debug logging** in Vault to see detailed auth attempts:
+   ```bash
+   vault server -dev -log-level=debug
+   ```
+
+2. **Decode your JWT** to inspect claims:
+   ```bash
+   # Decode the payload (middle part of JWT)
+   echo "<jwt>" | cut -d. -f2 | base64 -d 2>/dev/null | jq .
+   ```
+
+3. **Check JWKS configuration**:
+   ```bash
+   vault list auth/agentid/jwks/
+   vault read auth/agentid/jwks/<issuer-name>
+   ```
+
+4. **Verify the public key matches**:
+   ```bash
+   # Extract the public key from your JWKS and compare with the signing key
+   ```
+
+### Getting Help
+
+If you're still having issues:
+
+1. Check the [GitHub Issues](https://github.com/bbhorrigan/vault-plugin-auth-agentid/issues)
+2. Enable debug logging and capture the full error message
+3. Verify your JWT claims match the expected format
 
 ## License
 
@@ -254,3 +438,5 @@ See [LICENSE](LICENSE) file.
 ## Contributing
 
 Contributions welcome! Please read the [SECURITY.md](SECURITY.md) for security-related contributions.
+
+See [CHANGELOG.md](CHANGELOG.md) for version history.

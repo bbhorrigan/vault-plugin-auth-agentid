@@ -10,27 +10,44 @@ CGO_ENABLED := 0
 # Build directory
 BUILD_DIR := bin
 
-.PHONY: all build clean test fmt lint dev-setup register help
+# Version information
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Linker flags for version info
+LDFLAGS := -s -w \
+	-X main.Version=$(VERSION) \
+	-X main.GitCommit=$(GIT_COMMIT) \
+	-X main.BuildTime=$(BUILD_TIME)
+
+.PHONY: all build clean test fmt lint dev-setup register help docker docker-up docker-down version
 
 all: build
 
+## version: Show version information
+version:
+	@echo "Version:    $(VERSION)"
+	@echo "Git Commit: $(GIT_COMMIT)"
+	@echo "Build Time: $(BUILD_TIME)"
+
 ## build: Build the plugin binary
 build:
-	@echo "Building $(PLUGIN_NAME)..."
+	@echo "Building $(PLUGIN_NAME) $(VERSION)..."
 	@mkdir -p $(BUILD_DIR)
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) \
-		go build -o $(BUILD_DIR)/$(PLUGIN_NAME) .
+		go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(PLUGIN_NAME) .
 	@echo "Built: $(BUILD_DIR)/$(PLUGIN_NAME)"
 
 ## build-all: Build for multiple platforms
 build-all:
-	@echo "Building for multiple platforms..."
+	@echo "Building $(VERSION) for multiple platforms..."
 	@mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/$(PLUGIN_NAME)-linux-amd64 .
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o $(BUILD_DIR)/$(PLUGIN_NAME)-linux-arm64 .
-	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o $(BUILD_DIR)/$(PLUGIN_NAME)-darwin-amd64 .
-	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o $(BUILD_DIR)/$(PLUGIN_NAME)-darwin-arm64 .
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o $(BUILD_DIR)/$(PLUGIN_NAME)-windows-amd64.exe .
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(PLUGIN_NAME)-linux-amd64 .
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(PLUGIN_NAME)-linux-arm64 .
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(PLUGIN_NAME)-darwin-amd64 .
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(PLUGIN_NAME)-darwin-arm64 .
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(PLUGIN_NAME)-windows-amd64.exe .
 	@echo "Done building for all platforms"
 
 ## clean: Remove build artifacts
@@ -111,8 +128,44 @@ example-config:
 	@echo "    kid=\"key-1\" \\"
 	@echo "    public_key=@/path/to/public_key.pem"
 	@echo ""
+	@echo "# Create a role"
+	@echo "vault write auth/agentid/role/my-role \\"
+	@echo "    bound_issuers=\"https://agent-provider.example.com\" \\"
+	@echo "    allowed_intents=\"read,write\" \\"
+	@echo "    token_policies=\"my-policy\" \\"
+	@echo "    token_ttl=600"
+	@echo ""
 	@echo "# Login with a token"
 	@echo "vault write auth/agentid/login token=\"<agent-jwt>\""
+	@echo ""
+	@echo "# Login with a token and role"
+	@echo "vault write auth/agentid/login token=\"<agent-jwt>\" role=\"my-role\""
+
+## docker: Build Docker image
+docker:
+	@echo "Building Docker image..."
+	docker build -t $(PLUGIN_NAME):$(VERSION) -t $(PLUGIN_NAME):latest .
+
+## docker-up: Start development environment with Docker Compose
+docker-up: docker
+	@echo "Starting development environment..."
+	docker-compose up -d
+	@echo ""
+	@echo "Vault is running at http://localhost:8200"
+	@echo "Root token: root"
+	@echo ""
+	@echo "To interact with Vault:"
+	@echo "  export VAULT_ADDR=http://localhost:8200"
+	@echo "  export VAULT_TOKEN=root"
+
+## docker-down: Stop development environment
+docker-down:
+	@echo "Stopping development environment..."
+	docker-compose down -v
+
+## docker-logs: Show logs from development environment
+docker-logs:
+	docker-compose logs -f vault
 
 ## help: Show this help
 help:

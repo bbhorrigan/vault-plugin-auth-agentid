@@ -55,6 +55,8 @@ Configuration:
 				pathConfig(b),
 				pathJWKS(b),
 				pathJWKSList(b),
+				pathRoles(b),
+				pathRolesList(b),
 			},
 		),
 	}

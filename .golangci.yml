@@ -1,0 +1,144 @@
+# golangci-lint configuration
+# https://golangci-lint.run/usage/configuration/
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+
+linters:
+  enable:
+    # Default linters
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    
+    # Additional recommended linters
+    - gofmt
+    - goimports
+    - misspell
+    - unconvert
+    - unparam
+    - gocritic
+    - revive
+    - exportloopref
+    - whitespace
+    - bodyclose
+    - noctx
+    - prealloc
+    
+    # Security-focused linters
+    - gosec
+    
+  disable:
+    - structcheck  # Deprecated
+    - deadcode     # Deprecated
+    - varcheck     # Deprecated
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+    exclude-functions:
+      - io/ioutil.ReadFile
+      - io.Copy
+
+  govet:
+    check-shadowing: true
+    enable-all: true
+    disable:
+      - fieldalignment  # Can be noisy
+
+  gofmt:
+    simplify: true
+
+  goimports:
+    local-prefixes: github.com/bbhorrigan/vault-plugin-auth-agentid
+
+  misspell:
+    locale: US
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+    disabled-checks:
+      - hugeParam  # Can be too strict for Vault SDK types
+
+  revive:
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: dot-imports
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+      - name: increment-decrement
+      - name: var-naming
+      - name: var-declaration
+      - name: package-comments
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: indent-error-flow
+      - name: errorf
+
+  gosec:
+    severity: medium
+    confidence: medium
+    excludes:
+      - G104  # Audit errors not checked (we handle this with errcheck)
+      - G304  # File path provided as taint input (intentional in Vault plugins)
+
+  unparam:
+    check-exported: false
+
+  prealloc:
+    simple: true
+    range-loops: true
+    for-loops: false
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - gosec
+        - unparam
+        - gocritic
+
+    # Ignore long lines in generated code
+    - linters:
+        - lll
+      source: "^//go:generate "
+
+    # Ignore err shadowing in test files (common pattern)
+    - path: _test\.go
+      text: "shadow: declaration of \"err\""
+      linters:
+        - govet
+
+severity:
+  default-severity: warning
+  rules:
+    - linters:
+        - gosec
+      severity: error
+
+

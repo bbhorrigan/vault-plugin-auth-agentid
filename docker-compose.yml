@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  vault:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vault-agentid-dev
+    ports:
+      - "8200:8200"
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=root
+      - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+      - VAULT_ADDR=http://127.0.0.1:8200
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      # Mount for development - rebuild container to apply changes
+      - vault-data:/vault/data
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Optional: Setup container that configures the plugin after Vault starts
+  vault-setup:
+    image: hashicorp/vault:1.15
+    container_name: vault-agentid-setup
+    depends_on:
+      vault:
+        condition: service_healthy
+    environment:
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=root
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Waiting for Vault to be ready..."
+        sleep 2
+        
+        echo "Calculating plugin SHA256..."
+        SHA256=$$(sha256sum /vault/plugins/vault-plugin-auth-agentid | cut -d ' ' -f1)
+        
+        echo "Registering plugin..."
+        vault plugin register -sha256=$$SHA256 auth vault-plugin-auth-agentid || true
+        
+        echo "Enabling auth method..."
+        vault auth enable -path=agentid vault-plugin-auth-agentid || true
+        
+        echo "Configuring plugin..."
+        vault write auth/agentid/config \
+            trusted_issuers="https://example-issuer.com" \
+            default_ttl=300 \
+            max_ttl=3600 \
+            allowed_algorithms="RS256,ES256,EdDSA"
+        
+        echo "Plugin setup complete!"
+        echo ""
+        echo "To test:"
+        echo "  export VAULT_ADDR=http://localhost:8200"
+        echo "  export VAULT_TOKEN=root"
+        echo "  vault read auth/agentid/config"
+    volumes_from:
+      - vault
+
+volumes:
+  vault-data:
+
+
