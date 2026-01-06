@@ -12,6 +12,7 @@ A HashiCorp Vault auth plugin for verifying signed identity tokens from AI agent
 - **MCP Integration**: Metadata support for MCP server and tool tracking
 - **Short-Lived Credentials**: Configurable TTLs for secure, time-bound access
 - **Security Hardening**: HTTPS enforcement for JWKS, configurable clock skew tolerance, TLS 1.2+
+<img width="1371" height="797" alt="image" src="https://github.com/user-attachments/assets/325db71e-4606-496a-a5e8-8d19e4f8be1c" />
 
 ## Installation
 
